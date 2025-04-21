@@ -1,0 +1,1 @@
+print("Hello from VocabularBot — insert your main.py here!")
