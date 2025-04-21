@@ -1,9 +1,9 @@
-
 import os
 import telebot
 import json
 import datetime
 import openai
+from telebot import types
 
 # Загрузка переменных окружения
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
@@ -37,6 +37,13 @@ def check_word_usage(words, text):
 def start(message):
     bot.send_message(message.chat.id, "Привет! Я VocabularBot. Нажми кнопку 📘 Слова дня.")
 
+@bot.message_handler(commands=["menu"])
+def show_menu(message):
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add("📘 Слова дня", "✍️ Прислать эссе")
+    markup.add("🔁 Повторение", "📊 Мой прогресс", "💰 Поддержать проект")
+    bot.send_message(message.chat.id, "Выбери действие:", reply_markup=markup)
+
 @bot.message_handler(func=lambda m: True)
 def menu(message):
     if message.text == "📘 Слова дня":
@@ -45,14 +52,9 @@ def menu(message):
             bot.send_message(message.chat.id, "На сегодня слов нет.")
             return
         theme = data["theme"]
-        text = f"🎯 Тема: {theme}
-
-"
+        text = f"🎯 Тема: {theme}\n\n"
         for w in data["words"]:
-            text += f"🔹 *{w['word']}* ({w['pos']}) — {w['translation']}
-_{w['example']}_
-
-"
+            text += f"🔹 *{w['word']}* ({w['pos']}) — {w['translation']}\n_{w['example']}_\n\n"
         bot.send_message(message.chat.id, text, parse_mode="Markdown")
     elif message.text == "✍️ Прислать эссе":
         msg = bot.send_message(message.chat.id, "Пришли своё эссе одним сообщением.")
@@ -62,8 +64,7 @@ _{w['example']}_
             rep = json.load(f)
         text = ""
         for word in rep.get(str(message.from_user.id), []):
-            text += f"🔁 {word}
-"
+            text += f"🔁 {word}\n"
         bot.send_message(message.chat.id, text or "Нет слов для повторения.")
     elif message.text == "📊 Мой прогресс":
         with open(PROGRESS_PATH, encoding="utf-8") as f:
@@ -71,9 +72,7 @@ _{w['example']}_
         count = len([line for line in lines if str(message.from_user.id) in line])
         bot.send_message(message.chat.id, f"📈 Эссе сдано: {count}")
     elif message.text == "💰 Поддержать проект":
-        bot.send_message(message.chat.id, "Если хочешь поддержать проект ❤️
-📲 Kaspi Gold: +7 777 772 21 70
-Спасибо тебе огромное!")
+        bot.send_message(message.chat.id, "Если хочешь поддержать проект ❤️\n📲 Kaspi Gold: +7 777 772 21 70\nСпасибо тебе огромное!")
 
 # Обработка эссе
 def handle_essay(message):
@@ -98,8 +97,7 @@ def handle_essay(message):
 
     # Сохраняем в progress
     with open(PROGRESS_PATH, "a", encoding="utf-8") as f:
-        f.write(f"{user_id},{today},{len(data['words'])},{len(used_words)},yes
-")
+        f.write(f"{user_id},{today},{len(data['words'])},{len(used_words)},yes\n")
 
     # Сохраняем в repetition
     missed = [w["word"] for w in data["words"] if w["word"] not in used_words]
@@ -110,18 +108,7 @@ def handle_essay(message):
     with open(REPETITION_PATH, "w", encoding="utf-8") as f:
         json.dump(rep, f, ensure_ascii=False, indent=2)
 
-    bot.send_message(message.chat.id, f"📝 Эссе получено.
-✅ Использовано слов: {len(used_words)} из {len(data['words'])}")
-    bot.send_message(message.chat.id, f"📊 GPT анализ:
-{feedback}")
-
-# Кнопки
-from telebot import types
-@bot.message_handler(commands=["menu"])
-def show_menu(message):
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add("📘 Слова дня", "✍️ Прислать эссе")
-    markup.add("🔁 Повторение", "📊 Мой прогресс", "💰 Поддержать проект")
-    bot.send_message(message.chat.id, "Выбери действие:", reply_markup=markup)
+    bot.send_message(message.chat.id, f"📝 Эссе получено.\n✅ Использовано слов: {len(used_words)} из {len(data['words'])}")
+    bot.send_message(message.chat.id, f"📊 GPT анализ:\n{feedback}")
 
 bot.polling()
