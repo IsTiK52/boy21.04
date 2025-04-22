@@ -2,7 +2,7 @@ import os
 import telebot
 import json
 import datetime
-from openai import OpenAI
+import openai
 from telebot import types
 
 # Переменные окружения
@@ -10,7 +10,7 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
 bot = telebot.TeleBot(BOT_TOKEN)
-client = OpenAI(api_key=OPENAI_API_KEY)
+openai.api_key = OPENAI_API_KEY
 
 # Пути
 SCHEDULE_PATH = "words_schedule.json"
@@ -80,15 +80,15 @@ def handle_essay(message):
     data = get_today_words()
     used_words = check_word_usage(data["words"], message.text)
 
-    # GPT (новый синтаксис OpenAI API)
-    response = client.chat.completions.create(
+    # GPT-запрос через OpenAI
+    response = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
         messages=[
             {"role": "system", "content": "Check the following English essay for grammar, style, and structure."},
             {"role": "user", "content": message.text}
         ]
     )
-    feedback = response.choices[0].message.content
+    feedback = response["choices"][0]["message"]["content"]
 
     with open(PROGRESS_PATH, "a", encoding="utf-8") as f:
         f.write(f"{user_id},{today},{len(data['words'])},{len(used_words)},yes\n")
