@@ -2,37 +2,33 @@ import os
 import telebot
 import json
 import datetime
-import openai
+from openai import OpenAI
 from telebot import types
 
-# Загрузка переменных окружения
+# Переменные окружения
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
 bot = telebot.TeleBot(BOT_TOKEN)
-openai.api_key = OPENAI_API_KEY
+client = OpenAI(api_key=OPENAI_API_KEY)
 
-# Пути к файлам
+# Пути
 SCHEDULE_PATH = "words_schedule.json"
 PROGRESS_PATH = "storage/progress.csv"
 REPETITION_PATH = "storage/repetition.json"
 ESSAY_DIR = "storage/essays/"
 
-# Загрузка расписания
+# Загрузка слов
 with open(SCHEDULE_PATH, encoding="utf-8") as f:
     schedule = json.load(f)
 
-# Получение слов на сегодня
 def get_today_words():
     today = datetime.datetime.now().strftime("%Y-%m-%d")
     return schedule.get(today)
 
-# Проверка использования слов
 def check_word_usage(words, text):
-    used = [w["word"] for w in words if w["word"].lower() in text.lower()]
-    return used
+    return [w["word"] for w in words if w["word"].lower() in text.lower()]
 
-# Команды
 @bot.message_handler(commands=["start"])
 def start(message):
     bot.send_message(message.chat.id, "Привет! Я VocabularBot. Нажми кнопку 📘 Слова дня.")
@@ -74,7 +70,6 @@ def menu(message):
     elif message.text == "💰 Поддержать проект":
         bot.send_message(message.chat.id, "Если хочешь поддержать проект ❤️\n📲 Kaspi Gold: +7 777 772 21 70\nСпасибо тебе огромное!")
 
-# Обработка эссе
 def handle_essay(message):
     user_id = str(message.from_user.id)
     today = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -85,21 +80,19 @@ def handle_essay(message):
     data = get_today_words()
     used_words = check_word_usage(data["words"], message.text)
 
-    # GPT анализ
-    response = openai.ChatCompletion.create(
+    # GPT (новый синтаксис OpenAI API)
+    response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
             {"role": "system", "content": "Check the following English essay for grammar, style, and structure."},
             {"role": "user", "content": message.text}
         ]
     )
-    feedback = response["choices"][0]["message"]["content"]
+    feedback = response.choices[0].message.content
 
-    # Сохраняем в progress
     with open(PROGRESS_PATH, "a", encoding="utf-8") as f:
         f.write(f"{user_id},{today},{len(data['words'])},{len(used_words)},yes\n")
 
-    # Сохраняем в repetition
     missed = [w["word"] for w in data["words"] if w["word"] not in used_words]
     with open(REPETITION_PATH, encoding="utf-8") as f:
         rep = json.load(f)
