@@ -88,14 +88,15 @@ def handle_essay(message):
     data = get_today_words()
     used_words = check_word_usage(data["words"], message.text)
 
-    response = openai.ChatCompletion.create(
+    # GPT-запрос через OpenAI API v1
+    response = openai.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
             {"role": "system", "content": "Check the following English essay for grammar, style, and structure."},
             {"role": "user", "content": message.text}
         ]
     )
-    feedback = response["choices"][0]["message"]["content"]
+    feedback = response.choices[0].message.content
 
     with open(PROGRESS_PATH, "a", encoding="utf-8") as f:
         f.write(f"{user_id},{today},{len(data['words'])},{len(used_words)},yes\n")
