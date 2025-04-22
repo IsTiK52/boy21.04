@@ -2,14 +2,11 @@ import os
 import telebot
 import json
 import datetime
-import openai
+import requests
 from telebot import types
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-
 bot = telebot.TeleBot(BOT_TOKEN)
-openai.api_key = OPENAI_API_KEY
 
 SCHEDULE_PATH = "words_schedule.json"
 PROGRESS_PATH = "storage/progress.csv"
@@ -18,6 +15,14 @@ ESSAY_DIR = "storage/essays/"
 
 with open(SCHEDULE_PATH, encoding="utf-8") as f:
     schedule = json.load(f)
+
+def query_local_model(prompt):
+    res = requests.post("http://localhost:11434/api/generate", json={
+        "model": "llama3",
+        "prompt": prompt,
+        "stream": False
+    })
+    return res.json()["response"]
 
 def get_today_words():
     today = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -28,7 +33,7 @@ def check_word_usage(words, text):
 
 @bot.message_handler(commands=["start"])
 def start(message):
-    bot.send_message(message.chat.id, "Привет! Я VocabularBot. Нажми кнопку 📘 Слова дня.")
+    show_menu(message)
 
 @bot.message_handler(commands=["menu"])
 def show_menu(message):
@@ -42,25 +47,15 @@ def menu(message):
     if message.text == "📘 Слова дня":
         data = get_today_words()
         if not data:
-            bot.send_message(message.chat.id, "На сегодня слов нет.")
-            return
+            return bot.send_message(message.chat.id, "На сегодня слов нет.")
         theme = data["theme"]
-        text_parts = []
         text = f"🎯 Тема: {theme}\n\n"
         for w in data["words"]:
-            entry = f"🔹 *{w['word']}* ({w['pos']}) — {w['translation']}\n_{w['example']}_\n\n"
-            if len(text + entry) > 3500:
-                text_parts.append(text)
-                text = ""
-            text += entry
-        text_parts.append(text)
-        for part in text_parts:
-            bot.send_message(message.chat.id, part, parse_mode="Markdown")
-
+            text += f"🔹 *{w['word']}* ({w['pos']}) — {w['translation']}\n_{w['example']}_\n\n"
+        bot.send_message(message.chat.id, text, parse_mode="Markdown")
     elif message.text == "✍️ Прислать эссе":
         msg = bot.send_message(message.chat.id, "Пришли своё эссе одним сообщением.")
         bot.register_next_step_handler(msg, handle_essay)
-
     elif message.text == "🔁 Повторение":
         with open(REPETITION_PATH, encoding="utf-8") as f:
             rep = json.load(f)
@@ -68,13 +63,11 @@ def menu(message):
         for word in rep.get(str(message.from_user.id), []):
             text += f"🔁 {word}\n"
         bot.send_message(message.chat.id, text or "Нет слов для повторения.")
-
     elif message.text == "📊 Мой прогресс":
         with open(PROGRESS_PATH, encoding="utf-8") as f:
             lines = f.readlines()[1:]
         count = len([line for line in lines if str(message.from_user.id) in line])
         bot.send_message(message.chat.id, f"📈 Эссе сдано: {count}")
-
     elif message.text == "💰 Поддержать проект":
         bot.send_message(message.chat.id, "Если хочешь поддержать проект ❤️\n📲 Kaspi Gold: +7 777 772 21 70\nСпасибо тебе огромное!")
 
@@ -88,15 +81,7 @@ def handle_essay(message):
     data = get_today_words()
     used_words = check_word_usage(data["words"], message.text)
 
-    # OpenAI API v0.28 — стабильный вызов
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": "Check the following English essay for grammar, style, and structure."},
-            {"role": "user", "content": message.text}
-        ]
-    )
-    feedback = response["choices"][0]["message"]["content"]
+    feedback = query_local_model("Check this English essay for grammar and style:\n\n" + message.text)
 
     with open(PROGRESS_PATH, "a", encoding="utf-8") as f:
         f.write(f"{user_id},{today},{len(data['words'])},{len(used_words)},yes\n")
@@ -110,6 +95,6 @@ def handle_essay(message):
         json.dump(rep, f, ensure_ascii=False, indent=2)
 
     bot.send_message(message.chat.id, f"📝 Эссе получено.\n✅ Использовано слов: {len(used_words)} из {len(data['words'])}")
-    bot.send_message(message.chat.id, f"📊 GPT анализ:\n{feedback}")
+    bot.send_message(message.chat.id, f"📊 GPT-анализ:\n{feedback}")
 
 bot.polling()
