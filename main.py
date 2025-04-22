@@ -80,7 +80,7 @@ def handle_essay(message):
     data = get_today_words()
     used_words = check_word_usage(data["words"], message.text)
 
-    # GPT-запрос через OpenAI
+    # GPT-запрос (OpenAI >=1.0)
     response = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
         messages=[
