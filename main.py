@@ -10,7 +10,7 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
 bot = telebot.TeleBot(BOT_TOKEN)
-openai.api_key = OPENAI_API_KEY
+client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 # Пути
 SCHEDULE_PATH = "words_schedule.json"
@@ -18,7 +18,7 @@ PROGRESS_PATH = "storage/progress.csv"
 REPETITION_PATH = "storage/repetition.json"
 ESSAY_DIR = "storage/essays/"
 
-# Загрузка слов
+# Загрузка словаря
 with open(SCHEDULE_PATH, encoding="utf-8") as f:
     schedule = json.load(f)
 
@@ -48,13 +48,22 @@ def menu(message):
             bot.send_message(message.chat.id, "На сегодня слов нет.")
             return
         theme = data["theme"]
+        text_parts = []
         text = f"🎯 Тема: {theme}\n\n"
         for w in data["words"]:
-            text += f"🔹 *{w['word']}* ({w['pos']}) — {w['translation']}\n_{w['example']}_\n\n"
-        bot.send_message(message.chat.id, text, parse_mode="Markdown")
+            entry = f"🔹 *{w['word']}* ({w['pos']}) — {w['translation']}\n_{w['example']}_\n\n"
+            if len(text + entry) > 3500:
+                text_parts.append(text)
+                text = ""
+            text += entry
+        text_parts.append(text)
+        for part in text_parts:
+            bot.send_message(message.chat.id, part, parse_mode="Markdown")
+
     elif message.text == "✍️ Прислать эссе":
         msg = bot.send_message(message.chat.id, "Пришли своё эссе одним сообщением.")
         bot.register_next_step_handler(msg, handle_essay)
+
     elif message.text == "🔁 Повторение":
         with open(REPETITION_PATH, encoding="utf-8") as f:
             rep = json.load(f)
@@ -62,11 +71,13 @@ def menu(message):
         for word in rep.get(str(message.from_user.id), []):
             text += f"🔁 {word}\n"
         bot.send_message(message.chat.id, text or "Нет слов для повторения.")
+
     elif message.text == "📊 Мой прогресс":
         with open(PROGRESS_PATH, encoding="utf-8") as f:
             lines = f.readlines()[1:]
         count = len([line for line in lines if str(message.from_user.id) in line])
         bot.send_message(message.chat.id, f"📈 Эссе сдано: {count}")
+
     elif message.text == "💰 Поддержать проект":
         bot.send_message(message.chat.id, "Если хочешь поддержать проект ❤️\n📲 Kaspi Gold: +7 777 772 21 70\nСпасибо тебе огромное!")
 
@@ -80,15 +91,15 @@ def handle_essay(message):
     data = get_today_words()
     used_words = check_word_usage(data["words"], message.text)
 
-    # GPT-запрос (OpenAI >=1.0)
-    response = openai.ChatCompletion.create(
+    # GPT-анализ через OpenAI API v1
+    response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
             {"role": "system", "content": "Check the following English essay for grammar, style, and structure."},
             {"role": "user", "content": message.text}
         ]
     )
-    feedback = response["choices"][0]["message"]["content"]
+    feedback = response.choices[0].message.content
 
     with open(PROGRESS_PATH, "a", encoding="utf-8") as f:
         f.write(f"{user_id},{today},{len(data['words'])},{len(used_words)},yes\n")
