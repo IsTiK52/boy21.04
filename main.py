@@ -3,52 +3,30 @@ import telebot
 import json
 import datetime
 import requests
-from telebot import types
 
-# Настройки
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# Пути к файлам
 SCHEDULE_PATH = "words_schedule.json"
 PROGRESS_PATH = "storage/progress.csv"
 REPETITION_PATH = "storage/repetition.json"
 ESSAY_DIR = "storage/essays/"
 
-# Загрузка расписания
-with open(SCHEDULE_PATH, encoding="utf-8") as f:
-    schedule = json.load(f)
-
-# Получение слов на сегодня
 def get_today_words():
     today = datetime.datetime.now().strftime("%Y-%m-%d")
+    with open(SCHEDULE_PATH, encoding="utf-8") as f:
+        schedule = json.load(f)
     return schedule.get(today)
 
-# Проверка использования слов
 def check_word_usage(words, text):
-    used = [w["word"] for w in words if w["word"].lower() in text.lower()]
-    return used
+    return [w["word"] for w in words if w["word"].lower() in text.lower()]
 
-# Запрос к LLaMA (локально через Ollama)
-def ask_llama(prompt):
-    response = requests.post(
-        "http://localhost:11434/api/generate",
-        json={
-            "model": "llama3",
-            "prompt": prompt,
-            "stream": False
-        }
-    )
-    result = response.json()
-    return result.get("response", "").strip()
-
-# Команды
 @bot.message_handler(commands=["start", "menu"])
 def show_menu(message):
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add("📘 Слова дня", "✍️ Прислать эссе")
     markup.add("🔁 Повторение", "📊 Мой прогресс", "💰 Поддержать проект")
-    bot.send_message(message.chat.id, "Привет! Я VocabularBot. Нажми кнопку 📘 Слова дня.", reply_markup=markup)
+    bot.send_message(message.chat.id, "Выбери действие:", reply_markup=markup)
 
 @bot.message_handler(func=lambda m: True)
 def menu(message):
@@ -68,10 +46,9 @@ def menu(message):
     elif message.text == "🔁 Повторение":
         with open(REPETITION_PATH, encoding="utf-8") as f:
             rep = json.load(f)
-        text = ""
-        for word in rep.get(str(message.from_user.id), []):
-            text += f"🔁 {word}\n"
-        bot.send_message(message.chat.id, text or "Нет слов для повторения.")
+        words = rep.get(str(message.from_user.id), [])
+        text = "\n".join(f"🔁 {w}" for w in words) or "Нет слов для повторения."
+        bot.send_message(message.chat.id, text)
     elif message.text == "📊 Мой прогресс":
         with open(PROGRESS_PATH, encoding="utf-8") as f:
             lines = f.readlines()[1:]
@@ -80,10 +57,10 @@ def menu(message):
     elif message.text == "💰 Поддержать проект":
         bot.send_message(message.chat.id, "Если хочешь поддержать проект ❤️\n📲 Kaspi Gold: +7 777 772 21 70\nСпасибо тебе огромное!")
 
-# Обработка эссе
 def handle_essay(message):
     user_id = str(message.from_user.id)
     today = datetime.datetime.now().strftime("%Y-%m-%d")
+    os.makedirs(ESSAY_DIR, exist_ok=True)
     essay_path = f"{ESSAY_DIR}/{user_id}_{today}.txt"
     with open(essay_path, "w", encoding="utf-8") as f:
         f.write(message.text)
@@ -91,18 +68,19 @@ def handle_essay(message):
     data = get_today_words()
     used_words = check_word_usage(data["words"], message.text)
 
-    # Анализ GPT от LLaMA
-    prompt = (
-        "Проверь это эссе на английском языке на ошибки и структуру:\n\n"
-        + message.text
-    )
-    feedback = ask_llama(prompt)
+    # 🔁 GPT через локальный Ollama
+    response = requests.post("http://localhost:11434/api/generate", json={
+        "model": "llama3",
+        "prompt": f"Check this English essay for grammar, style, and structure:\n\n{message.text}",
+        "stream": False
+    })
+    feedback = response.json().get("response", "").strip()
 
-    # Прогресс
+    # Save progress
     with open(PROGRESS_PATH, "a", encoding="utf-8") as f:
         f.write(f"{user_id},{today},{len(data['words'])},{len(used_words)},yes\n")
 
-    # Повторение
+    # Update repetition
     missed = [w["word"] for w in data["words"] if w["word"] not in used_words]
     with open(REPETITION_PATH, encoding="utf-8") as f:
         rep = json.load(f)
@@ -114,5 +92,4 @@ def handle_essay(message):
     bot.send_message(message.chat.id, f"📝 Эссе получено.\n✅ Использовано слов: {len(used_words)} из {len(data['words'])}")
     bot.send_message(message.chat.id, f"📊 GPT анализ:\n{feedback}")
 
-# Запуск
 bot.polling()
